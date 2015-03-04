@@ -1,42 +1,63 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 import XMonad
 import XMonad.Config.Gnome
 import XMonad.Layout.NoBorders
+import XMonad.Layout.MultiToggle
+import XMonad.Layout.MultiToggle.Instances
 import XMonad.Layout.ThreeColumns
 import qualified XMonad.StackSet as W
 import qualified Data.Map as M
 import System.Exit
---import XMonad.Hooks.EwmhDesktops
---import XMonad.Config.Gnome
+import System.Posix.Unistd
+import XMonad.Actions.SpawnOn
+import XMonad.Hooks.ManageDocks    -- (3)  automatically avoid covering my
+                                   --      status bar with windows
+import XMonad.Hooks.ManageHelpers  -- (4)  for doCenterFloat, put floating
 
-startup :: X ()
-startup = do
-    --spawnOn "6" "play"
-    --spawnOn "8" "twitter.com"
-    --spawnOn "6" "couple"
-    spawnOn "1" "terminator --profile=Floaty"
-    --spawnOn "0" "trello"
-    --spawnOn "8" "evernote"
+data Host = Desktop | Laptop deriving (Eq, Read, Show)
+
+getHost :: IO Host
+getHost = do
+    hostName <- nodeName `fmap` getSystemID
+    return $ case hostName of
+                  "vaio" -> Laptop
+                  _      -> Desktop
+
+
+
+
+
 
 spawnOn :: String -> String -> X ()
 spawnOn workspace program = do
     spawn program
     windows $ W.greedyView workspace
 
+
+
+
 myWorkspaces :: [WorkspaceId]
 myWorkspaces = map show ([0 .. 9 :: Int])
 
-main = xmonad gnomeConfig
-     { borderWidth = 0
-     , layoutHook  = smartBorders (layoutHook gnomeConfig) ||| ThreeCol 1 (3/100) (1/4)
-     , startupHook = startup
-     , modMask     = mod4Mask
-     , keys        = myKeys
-     , workspaces  = myWorkspaces
-     , focusedBorderColor = "#000000"
-     , normalBorderColor = "#000000"
-     --, handleEventHook    = fullscreenEventHook
-     , terminal = "terminator"
-     }
+main = do
+    h <- getHost
+    xmonad defaultConfig { borderWidth = 6
+                         , manageHook  = manageSpawn <+> myManageHook
+                         , layoutHook  = id
+                             . smartBorders
+                             . mkToggle (single NOBORDERS)
+                             . mkToggle (single MIRROR)
+                             . mkToggle (single FULL)
+                             $ (layoutHook defaultConfig) ||| ThreeCol 1 (3/100) (1/4)
+                         , modMask     = mod4Mask
+                         , keys        = myKeys
+                         , startupHook = sendMessage $ Toggle NOBORDERS
+                         , workspaces  = myWorkspaces
+                         , focusedBorderColor = "#0897eb"
+                         , normalBorderColor = "#3a3a3a"
+                         , terminal = "terminator"
+                         }
 
 myKeys :: XConfig Layout -> M.Map (KeyMask, KeySym) (X ())
 myKeys conf@(XConfig {XMonad.modMask = modMask}) = M.fromList $
@@ -95,6 +116,11 @@ myKeys conf@(XConfig {XMonad.modMask = modMask}) = M.fromList $
     -- Expand the master area
     , ((modMask .|. shiftMask, xK_h     ), sendMessage Expand)
 
+
+    , ((modMask,               xK_b     ), sendMessage $ Toggle NOBORDERS)
+    , ((modMask,               xK_m     ), sendMessage $ Toggle MIRROR)
+    , ((modMask,               xK_f     ), sendMessage $ Toggle FULL)
+
     -- Push window back into tiling
     , ((modMask,               xK_t     ), withFocused $ windows . W.sink)
 
@@ -124,9 +150,22 @@ myKeys conf@(XConfig {XMonad.modMask = modMask}) = M.fromList $
     --
     -- my Additional Keybindings
     --
-    [ ((modMask,                 xK_b           ), spawn "chromium")
+    [ ((modMask .|. shiftMask,   xK_b           ), spawn "chromium")
     , ((modMask,                 xK_l           ), spawn "gnome-screensaver-command -l")
     , ((0                     , 0x1008FF10), spawn "amixer set Master 2-")
     , ((0                     , 0x1008FF11), spawn "amixer set Master 2+")
     , ((0                     , 0x1008FF12), spawn "amixer set Master toggle")
     ]
+
+
+
+myManageHook :: ManageHook
+myManageHook = composeAll [ appName =? "trello.com"                    --> doShift "0"
+                          , appName =? "play.google.com__music_listen" --> doShift "2"
+                          , appName =? "app.couple.me__login"          --> doShift "3"
+                          , appName =? "www.twitter.com"               --> doShift "3"
+                          , appName =? "bgv8.slack.com"                --> doShift "3"
+                          , appName =? "www.evernote.com__Home.action" --> doShift "9"
+                          , appName =? "gmail.com"                     --> doShift "9"
+                          , appName =? "www.crunchyroll.com"           --> doFloat
+                          ]
